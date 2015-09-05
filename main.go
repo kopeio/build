@@ -127,6 +127,9 @@ func main() {
 																			        fi
 	*/
 
+	buildContext.Layer.Config.Config.User = "memcache"
+	buildContext.Layer.Config.Config.Cmd = []string{"/usr/bin/memcached"}
+
 	buildContext.Layer.DebugDump(os.Stdout, "")
 
 	bundle := NewDockerBundle()

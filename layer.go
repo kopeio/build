@@ -14,8 +14,9 @@ import (
 )
 
 type Layer struct {
-	ID   string
-	root LayerEntry
+	ID     string
+	Config DockerConfig
+	root   LayerEntry
 }
 
 type DockerConfig struct {
@@ -57,15 +58,7 @@ type DockerContainerConfig struct {
 }
 
 func (l *Layer) BuildDockerJSON() (string, error) {
-	now := time.Now().UTC()
-	var config DockerConfig
-	config.ID = l.ID
-	config.Created = now.Format(time.RFC3339Nano)
-	config.DockerVersion = "1.7.1"
-	config.Architecture = "amd64"
-	config.OS = "linux"
-
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(l.Config)
 	if err != nil {
 		return "", fmt.Errorf("unable to build Docker JSON descriptor: %v", err)
 	}
@@ -76,6 +69,15 @@ func NewLayer(id string) *Layer {
 	l := &Layer{}
 	l.ID = id
 	l.root.root = true
+
+	now := time.Now().UTC()
+
+	l.Config.ID = l.ID
+	l.Config.Created = now.Format(time.RFC3339Nano)
+	l.Config.DockerVersion = "1.7.1"
+	l.Config.Architecture = "amd64"
+	l.Config.OS = "linux"
+
 	return l
 }
 
