@@ -90,12 +90,17 @@ func main() {
 	}
 
 	for _, file := range files {
-		t := &AddDebTask{}
-		t.Source = NewFileByteSource(baseDir + "/" + file.Name())
+		name := file.Name()
+		if strings.HasSuffix(name, ".deb") {
+			t := &AddDebTask{}
+			t.Source = NewFileByteSource(baseDir + "/" + file.Name())
 
-		err := t.Run(buildContext)
-		if err != nil {
-			glog.Exitf("error building image (%s): %v", file.Name(), err)
+			err := t.Run(buildContext)
+			if err != nil {
+				glog.Exitf("error building image (%s): %v", file.Name(), err)
+			}
+		} else {
+			glog.Infof("Skipping file: %q", name)
 		}
 	}
 
