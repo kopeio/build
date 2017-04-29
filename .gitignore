@@ -1,0 +1,7 @@
+bazel-bin
+bazel-genfiles
+bazel-imagebuilder
+bazel-out
+bazel-testlogs
+
+
