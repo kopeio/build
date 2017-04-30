@@ -6,21 +6,27 @@ import (
 	"github.com/golang/glog"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"net/url"
 )
 
 type Auth struct {
 	HttpClient *http.Client
 	URL        string
 	Subject    string
+
+	cache []*Token
 }
 
 type Token struct {
-	auth *Auth
-	data *tokenResponse
+	auth   *Auth
+	bearer *tokenResponse
+	basic  string
+
+	registry string
+	scopes   []string
 }
 
 type tokenResponse struct {
@@ -35,9 +41,61 @@ type authConfig struct {
 	Auth  string `json:"auth"`
 }
 
-func (a *Auth) FindHeader(registry *Registry, repository string, scope string) (string) {
-	glog.Warningf("Auth FindHeader not implemented")
-	return ""
+func (a *Auth) FindHeader(registry *Registry, repository string, permission string) string {
+	token := a.findToken(registry, repository, permission)
+	if token == nil {
+		return ""
+	}
+
+	header, err := token.GetAuthorizationHeader()
+	if err != nil {
+		glog.Infof("error getting header from token: %v", err)
+	}
+
+	return header
+}
+
+func (a *Auth) findToken(registry *Registry, repository string, permission string) *Token {
+	for _, token := range a.cache {
+		if token.registry != registry.URL {
+			continue
+		}
+
+		if token.basic != "" {
+			return token
+		}
+
+		if token.bearer != nil {
+			scope := "repository:" + repository + ":" + permission
+			for _, s := range token.scopes {
+				if s == scope {
+					return token
+				}
+			}
+		}
+	}
+	glog.V(4).Infof("Could not find cached token for %s %s", repository, permission)
+	return nil
+}
+
+func tokenizeWWWAuthenticate(s string) []string {
+	lastQuote := rune(0)
+	f := func(c rune) bool {
+		switch {
+		case c == lastQuote:
+			lastQuote = rune(0)
+			return false
+		case lastQuote != rune(0):
+			return false
+		case c == '"':
+			lastQuote = c
+			return false
+		default:
+			return c == ','
+		}
+	}
+
+	return strings.FieldsFunc(s, f)
 }
 
 func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error) {
@@ -45,7 +103,6 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 	if wwwAuthenticate == "" {
 		return "", fmt.Errorf("Permission error, but did not recieve www-authenticate header")
 	}
-	glog.Infof("www-authenticate header is %q", wwwAuthenticate)
 
 	if strings.HasPrefix(wwwAuthenticate, "Bearer ") {
 		realm := ""
@@ -53,7 +110,7 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 		scope := ""
 
 		v := strings.TrimPrefix(wwwAuthenticate, "Bearer ")
-		tokens := strings.Split(v, ",")
+		tokens := tokenizeWWWAuthenticate(v)
 		for _, token := range tokens {
 			if strings.HasPrefix(token, "realm=\"") {
 				realm = strings.TrimPrefix(token, "realm=\"")
@@ -79,8 +136,7 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 			return "", fmt.Errorf("realm not specified in www-authenticate header: %q", wwwAuthenticate)
 		}
 
-		site := registry.URL
-		token, err := a.getToken(site, service, scope, realm)
+		token, err := a.getToken(registry, service, scope, realm)
 		if err != nil {
 			return "", err
 		}
@@ -96,7 +152,14 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 			return "", err
 		}
 
-		return "Basic " + authConfig.Auth, nil
+		token := &Token{
+			auth:  a,
+			basic: authConfig.Auth,
+
+			registry: registry.URL,
+		}
+		a.cache = append(a.cache, token)
+		return token.GetAuthorizationHeader()
 	} else {
 		return "", fmt.Errorf("unknown www-authenticate challenge: %q", wwwAuthenticate)
 	}
@@ -119,54 +182,72 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 		return nil, fmt.Errorf("error parsing %q: %v", p, err)
 	}
 
-	auth := conf[site]
-	if auth != nil {
-		glog.Infof("Found credentials for %s", site)
-		return auth, nil
+	var keys []string
+	if site == "" || site == "https://registry-1.docker.io/" {
+		keys = append(keys, "https://registry-1.docker.io/")
+		keys = append(keys, "https://index.docker.io/")
+		keys = append(keys, "https://index.docker.io/v1/")
+	} else {
+		keys = append(keys, site)
 	}
 
-	k := strings.TrimPrefix(site, "https://")
-	k = strings.TrimPrefix(k, "http://")
-	auth = conf[k]
-	if auth != nil {
-		glog.Infof("Found credentials for %s", site)
-		return auth, nil
+	for _, k := range keys {
+		auth := conf[k]
+		if auth != nil {
+			glog.Infof("Found credentials for %s", k)
+			return auth, nil
+		}
+	}
+
+	for _, k := range keys {
+		k = strings.TrimPrefix(site, "https://")
+		k = strings.TrimPrefix(k, "http://")
+		auth := conf[k]
+		if auth != nil {
+			glog.V(2).Infof("Found credentials for %s", k)
+			return auth, nil
+		}
 	}
 
 	glog.Infof("Did not find credentials for %s", site)
 	return nil, nil
 }
 
-func (a *Auth) getToken(site string, service string, scope string, realm string) (*Token, error) {
+func (a *Auth) getToken(registry *Registry, service string, scope string, realm string) (*Token, error) {
 	httpClient := a.HttpClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
+	site := registry.URL
+	if site == "" {
+		site = "https://registry-1.docker.io/"
+	}
 	glog.Infof("Requesting docker token for %s", site)
 
-	//site := "https://index.docker.io/v1/"
 	auth, err := a.getAuthentication(site)
 	if err != nil {
 		return nil, err
 	}
 
-	//authUrl := "https://auth.docker.io/token?service=registry.docker.io&scope=" + scope
+	// e.g. "https://auth.docker.io/token?service=registry.docker.io&scope=" + scope
 	authUrl := realm
 	var params []string
 	if service != "" {
-		params = append(params, "service=" + url.QueryEscape(service))
+		params = append(params, "service="+url.QueryEscape(service))
 	}
 	if scope != "" {
-		params = append(params, "scope=" + url.QueryEscape(scope))
+		params = append(params, "scope="+url.QueryEscape(scope))
 	}
 	if len(params) != 0 {
 		authUrl += "?" + strings.Join(params, "&")
 	}
 	req, err := http.NewRequest("GET", authUrl, nil)
 	if auth != nil && auth.Auth != "" {
-		req.Header.Add("authorization", "Basic " + auth.Auth)
+		req.Header.Add("authorization", "Basic "+auth.Auth)
 	}
+	glog.V(2).Infof("HTTP %s %s", req.Method, req.URL)
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error getting auth token for %q: %v", scope, err)
@@ -182,7 +263,7 @@ func (a *Auth) getToken(site string, service string, scope string, realm string)
 		return nil, fmt.Errorf("error getting auth token for %q: %s", scope, resp.Status)
 	}
 
-	glog.V(4).Infof("auth response %s", string(body))
+	glog.V(6).Infof("auth response %s", string(body))
 
 	data := &tokenResponse{}
 	err = json.Unmarshal(body, data)
@@ -191,10 +272,28 @@ func (a *Auth) getToken(site string, service string, scope string, realm string)
 		return nil, fmt.Errorf("error parsing response: %v", err)
 	}
 
-	return &Token{auth: a, data: data}, nil
+	// TODO split scope so repository:a:push,pull => repository:a:pull
+	scopes := []string{scope}
+
+	token := &Token{
+		auth:     a,
+		bearer:   data,
+		registry: registry.URL,
+		scopes:   scopes,
+	}
+	a.cache = append(a.cache, token)
+	return token, nil
 }
 
 func (t *Token) GetAuthorizationHeader() (string, error) {
-	// TODO: Check expiration and refresh
-	return "Bearer " + t.data.Token, nil
+	if t.basic != "" {
+		return "Basic " + t.basic, nil
+	}
+
+	if t.bearer != nil {
+		// TODO: Check expiration and refresh
+		return "Bearer " + t.bearer.Token, nil
+	}
+
+	return "", fmt.Errorf("invalid token")
 }

@@ -51,7 +51,6 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 	}
 	auth := &docker.Auth{}
 
-
 	{
 		dockerManifest, err := registry.GetManifest(auth, spec.Repository, spec.Tag)
 		if err != nil {
@@ -59,7 +58,7 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 		}
 		glog.Infof("response: %s", dockerManifest)
 
-		blob, err := ensureBlob(out, registry, auth, spec.Repository, dockerManifest.Config.Digest, layerStore)
+		blob, err := ensureBlob(out, registry, auth, spec.Repository, dockerManifest.Config.Digest, dockerManifest.Config.Size, layerStore)
 		if err != nil {
 			return err
 		}
@@ -74,7 +73,7 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 		}
 
 		for _, layer := range dockerManifest.Layers {
-			blob, err := ensureBlob(out, registry, auth, spec.Repository, layer.Digest, layerStore)
+			blob, err := ensureBlob(out, registry, auth, spec.Repository, layer.Digest, layer.Size, layerStore)
 			if err != nil {
 				return err
 			}
@@ -94,7 +93,7 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 	return nil
 }
 
-func ensureBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, repository string, digest string, layerStore layers.Store) (layers.Blob, error) {
+func ensureBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, repository string, digest string, size int64, layerStore layers.Store) (layers.Blob, error) {
 	blob, err := layerStore.FindBlob(repository, digest)
 	if err != nil {
 		return nil, fmt.Errorf("error checking for blob: %v", err)
@@ -103,7 +102,8 @@ func ensureBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, rep
 		glog.Infof("already have blob %s", digest)
 		return blob, nil
 	}
-	fmt.Fprintf(out, "Downloading layer %s\n", digest)
+	mb := size / (1024 * 1024)
+	fmt.Fprintf(out, "Downloading layer %s (%d MB)\n", digest, mb)
 
 	tmpfile, err := ioutil.TempFile("", "blob")
 	if err != nil {
@@ -125,7 +125,7 @@ func ensureBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, rep
 		return nil, fmt.Errorf("error downloading blob %s: %v", digest, err)
 	}
 
-	glog.Infof("Downloaded blob %s size=%d", digest, n)
+	glog.V(2).Infof("Downloaded blob %s size=%d", digest, n)
 
 	_, err = tmpfile.Seek(0, 0)
 	if err != nil {

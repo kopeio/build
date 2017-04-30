@@ -49,7 +49,17 @@ type ContainerConfig struct {
 	Labels       map[string]string // ?
 }
 
-func JoinLayer(base *ImageConfig, diffID string, digest string, description string, options layers.Options) (*ImageConfig, error) {
+type AddLayer struct {
+	Layer   layers.Layer
+	Blob    layers.Blob
+	DiffID  string
+	Options layers.Options
+
+	// Description to put into docker history
+	Description string
+}
+
+func JoinLayer(base *ImageConfig, addLayers []*AddLayer) (*ImageConfig, error) {
 	c := &ImageConfig{}
 	if base != nil {
 		*c = *base
@@ -62,29 +72,39 @@ func JoinLayer(base *ImageConfig, diffID string, digest string, description stri
 	now := time.Now().UTC()
 	c.Created = now.Format(time.RFC3339Nano)
 
-	if options.WorkingDir != "" {
-		c.Config.WorkingDir = options.WorkingDir
-	}
-	if options.Cmd != nil {
-		c.Config.Cmd = options.Cmd
+	for _, addLayer := range addLayers {
+		if addLayer.Options.WorkingDir != "" {
+			c.Config.WorkingDir = addLayer.Options.WorkingDir
+		}
+		if addLayer.Options.Cmd != nil {
+			c.Config.Cmd = addLayer.Options.Cmd
+		}
 	}
 
 	// TODO: Is this right?
 	c.ContainerConfig = c.Config
 
 	// History is ordered from base -> most derived
-	c.History = append(c.History, History{
-		Created:   now.Format(time.RFC3339Nano),
-		CreatedBy: description,
-	})
+	for _, layer := range addLayers {
+		description := layer.Description
+		if description == "" {
+			description = "imagebuilder build"
+		}
+		c.History = append(c.History, History{
+			Created:   now.Format(time.RFC3339Nano),
+			CreatedBy: description,
+		})
+	}
 
-	// Layers are ordered from most derived -> base
+	// Layers are ordered from base -> most derived
 	c.RootFS.Type = "layers"
 	var layers []string
 	for _, layer := range c.RootFS.DiffIDs {
 		layers = append(layers, layer)
 	}
-	layers = append(layers, diffID)
+	for _, addLayer := range addLayers {
+		layers = append(layers, addLayer.DiffID)
+	}
 	c.RootFS.DiffIDs = layers
 
 	return c, nil

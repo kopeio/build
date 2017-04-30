@@ -89,6 +89,15 @@ func putFile(src string, l layers.Layer, dest string, depth int) error {
 				return err
 			}
 		}
+
+		// Create the dirs, for the timestamps primarily
+		// Note we have to do this after we write the files!
+		// TODO: If we later copy another file into the directory, that will also change the modtime
+		_, err = l.PutFile(dest, stat, nil)
+		if err != nil {
+			return err
+		}
+
 		return nil
 	}
 

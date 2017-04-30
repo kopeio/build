@@ -123,24 +123,49 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	//	return fmt.Errorf("error getting registry token: %v", err)
 	//}
 
-	layer, err := layerStore.FindLayer(flags.Source)
-	if err != nil {
-		return err
-	}
-	if layer == nil {
-		return fmt.Errorf("layer %q not found", flags.Source)
-	}
+	var newLayers []*imageconfig.AddLayer
+	var baseImage string
 
-	options, err := layer.GetOptions()
-	if err != nil {
-		return err
+	{
+		source := flags.Source
+		for {
+			layer, err := layerStore.FindLayer(source)
+			if err != nil {
+				return err
+			}
+			if layer == nil {
+				return fmt.Errorf("layer %q not found", source)
+			}
+
+			newLayer := &imageconfig.AddLayer{
+				Layer: layer,
+			}
+			// Insert new layer at front
+			newLayers = append([]*imageconfig.AddLayer{newLayer}, newLayers...)
+
+			newLayer.Description = fmt.Sprintf("imagebuilder: layer %s", source)
+
+			options, err := layer.GetOptions()
+			if err != nil {
+				return err
+			}
+			newLayer.Options = options
+
+			if options.Base == "" || strings.Contains(options.Base, "/") {
+				baseImage = options.Base
+				break
+			}
+
+			// The base is another layer
+			source = options.Base
+		}
 	}
 
 	var base *imageconfig.ImageConfig
 	var baseImageManifest *layers.ImageManifest
 	var baseImageSpec *DockerImageSpec
-	if options.Base != "" {
-		baseImageSpec, err = ParseDockerImageSpec(options.Base)
+	if baseImage != "" {
+		baseImageSpec, err = ParseDockerImageSpec(baseImage)
 		if err != nil {
 			return err
 		}
@@ -149,11 +174,11 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			return err
 		}
 		if baseImageManifest == nil {
-			return fmt.Errorf("base image %q not found", options.Base)
+			return fmt.Errorf("base image %q not found", baseImage)
 		}
 
 		if baseImageManifest.Config.Digest == "" {
-			return fmt.Errorf("base image %q did not have a valid manifest", options.Base)
+			return fmt.Errorf("base image %q did not have a valid manifest", baseImage)
 		}
 
 		configBlob, err := layerStore.FindBlob(baseImageSpec.Repository, baseImageManifest.Config.Digest)
@@ -179,15 +204,17 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		}
 	}
 
-	// BuildTar automatically saves the blob
-	newLayerBlob, diffID, err := layer.BuildTar(layerStore, dest.Repository)
-	if err != nil {
-		return err
+	for _, newLayer := range newLayers {
+		// BuildTar automatically saves the blob
+		blob, diffID, err := newLayer.Layer.BuildTar(layerStore, dest.Repository)
+		if err != nil {
+			return err
+		}
+		newLayer.Blob = blob
+		newLayer.DiffID = diffID
 	}
 
-	// TODO: Allow more?
-	description := "imagebuilder build"
-	config, err := imageconfig.JoinLayer(base, diffID, newLayerBlob.Digest(), description, options)
+	config, err := imageconfig.JoinLayer(base, newLayers)
 	if err != nil {
 		return err
 	}
@@ -211,50 +238,56 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		Size:   configBlob.Length(),
 	}
 
+	// Add and upload base layers
 	if base != nil {
 		for _, baseLayer := range baseImageManifest.Layers {
 			imageManifest.Layers = append(imageManifest.Layers, layers.LayerManifest{
 				Digest: baseLayer.Digest,
 				Size:   baseLayer.Size,
 			})
+
+			// TODO: Cross-copy blobs ... we don't need to download them
+			src, err := layerStore.FindBlob(baseImageSpec.Repository, baseLayer.Digest)
+			if err != nil {
+				return err
+			}
+			err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	imageManifest.Layers = append(imageManifest.Layers, layers.LayerManifest{
-		Digest: newLayerBlob.Digest(),
-		Size:   newLayerBlob.Length(),
-	})
+	// Add and upload new layers
+	for _, newLayer := range newLayers {
+		digest := newLayer.Blob.Digest()
 
-	err = layerStore.WriteImageManifest(dest.Repository, dest.Tag, imageManifest)
-	if err != nil {
-		return fmt.Errorf("error writing image manifest: %v", err)
-	}
+		imageManifest.Layers = append(imageManifest.Layers, layers.LayerManifest{
+			Digest: digest,
+			Size:   newLayer.Blob.Length(),
+		})
 
-	{
-		err = uploadBlob(targetRegistry, auth, dest.Repository, configBlob)
+		src, err := layerStore.FindBlob(dest.Repository, digest)
+		if err != nil {
+			return err
+		}
+		if src == nil {
+			return fmt.Errorf("unable to find layer blob %s %s", dest.Repository, digest)
+		}
+		err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
 		if err != nil {
 			return err
 		}
 	}
 
-	for i, digest := range imageManifest.Layers {
-		if i == len(imageManifest.Layers) - 1 {
-			src, err := layerStore.FindBlob(dest.Repository, digest.Digest)
-			if err != nil {
-				return err
-			}
-			if src == nil {
-				return fmt.Errorf("unable to find layer blob %s %s", dest.Repository, digest.Digest)
-			}
-			err = uploadBlob(targetRegistry, auth, dest.Repository, src)
-		} else {
-			// TODO: Cross-copy blobs ... we don't need to download them
-			src, err := layerStore.FindBlob(baseImageSpec.Repository, digest.Digest)
-			if err != nil {
-				return err
-			}
-			err = uploadBlob(targetRegistry, auth, dest.Repository, src)
+	// Build and upload the manifest
+	{
+		err = layerStore.WriteImageManifest(dest.Repository, dest.Tag, imageManifest)
+		if err != nil {
+			return fmt.Errorf("error writing image manifest: %v", err)
 		}
+
+		err = uploadBlob(out, targetRegistry, auth, dest.Repository, configBlob)
 		if err != nil {
 			return err
 		}
@@ -289,7 +322,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	return nil
 }
 
-func uploadBlob(registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob) error {
+func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob) error {
 	digest := srcBlob.Digest()
 
 	hasBlob, err := registry.HasBlob(auth, destRepository, digest)
@@ -308,6 +341,9 @@ func uploadBlob(registry *docker.Registry, auth *docker.Auth, destRepository str
 	}
 	defer r.Close()
 
+	length := srcBlob.Length()
+	mb := length / (1024 * 1024)
+	fmt.Fprintf(out, "Uploading blob %s (%d MB)\n", digest, mb)
 	err = registry.UploadBlob(auth, destRepository, digest, r, srcBlob.Length())
 	if err != nil {
 		return err

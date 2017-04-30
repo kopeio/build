@@ -200,14 +200,33 @@ func (l *fsLayer) Name() string {
 func (l *fsLayer) PutFile(dest string, stat os.FileInfo, in io.Reader) (int64, error) {
 	dest = strings.TrimPrefix(dest, "/")
 	// TODO: Sanitize to remove .. etc
-
 	dest = filepath.Join(l.path, "rootfs", dest)
+
 	err := os.MkdirAll(filepath.Dir(dest), 0755)
 	if err != nil {
 		return 0, fmt.Errorf("failed to mkdirs for %q: %v", dest, err)
 	}
 
-	return putFile(dest, stat.Mode(), in)
+	n := int64(0)
+
+	if stat.IsDir() {
+		err := os.MkdirAll(dest, stat.Mode().Perm())
+		if err != nil {
+			return 0, fmt.Errorf("failed to mkdir for %q: %v", dest, err)
+		}
+	} else {
+		n, err = putFile(dest, stat.Mode(), in)
+	}
+
+	if err == nil {
+		// TODO: Set creation times?  Though they don't seem to go into the tar file
+		err := os.Chtimes(dest, stat.ModTime(), stat.ModTime())
+		if err != nil {
+			return 0, fmt.Errorf("error setting times on %q: %v", dest, err)
+		}
+	}
+
+	return n, err
 }
 
 func putFile(dest string, mode os.FileMode, in io.Reader) (n int64, err error) {
@@ -397,7 +416,7 @@ func copyDirToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string)
 		if err != nil {
 			return fmt.Errorf("error build tar entry: %v", err)
 		}
-		hdr.Name = path.Join(tarPrefix, f.Name())
+		hdr.Name = tarPrefix
 
 		err = w.WriteHeader(hdr)
 		if err != nil {

@@ -15,7 +15,7 @@ import (
 )
 
 type Registry struct {
-	URL        string
+	URL string
 
 	HttpClient *http.Client
 }
@@ -69,8 +69,8 @@ type ManifestV2 struct {
 	//Name string `json:"name"`
 	//Tag string `json:"tag"`
 	//Architecture string `json:"architecture"`
-	Layers        []ManifestV2Layer `json:"layers"`
-	Config        ManifestV2Layer   `json:"config"`
+	Layers []ManifestV2Layer `json:"layers"`
+	Config ManifestV2Layer   `json:"config"`
 }
 
 func (m *ManifestV2) String() string {
@@ -103,7 +103,7 @@ func (r *Registry) GetManifest(auth *Auth, repository string, tag string) (*Mani
 			return nil, fmt.Errorf("error writing manifest to %s: %v", repository, err)
 		}
 
-		switch (resp.StatusCode) {
+		switch resp.StatusCode {
 		case 200:
 			glog.V(4).Infof("got docker manifest %s", body)
 			response := &ManifestV2{}
@@ -131,13 +131,12 @@ func (r *Registry) GetManifest(auth *Auth, repository string, tag string) (*Mani
 }
 
 func (r *Registry) PutManifest(auth *Auth, repository string, tag string, manifest *ManifestV2) error {
-	authHeader := auth.FindHeader(r, repository, "push")
+	authHeader := auth.FindHeader(r, repository, "pull,push")
 
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		return fmt.Errorf("error serializing manifest: %v", err)
 	}
-
 
 	attempt := 0
 	for {
@@ -157,7 +156,7 @@ func (r *Registry) PutManifest(auth *Auth, repository string, tag string, manife
 			return fmt.Errorf("error writing manifest to %s: %v", repository, err)
 		}
 
-		switch (resp.StatusCode) {
+		switch resp.StatusCode {
 		case 201:
 			return nil
 
@@ -173,7 +172,7 @@ func (r *Registry) PutManifest(auth *Auth, repository string, tag string, manife
 
 		default:
 			glog.V(2).Infof("unexpected http response: %s %s", resp.Status, body)
-			return  fmt.Errorf("docker registry returned unexpected result writing manifest to %s: %s", repository, resp.Status)
+			return fmt.Errorf("docker registry returned unexpected result writing manifest to %s: %s", repository, resp.Status)
 		}
 	}
 
@@ -197,14 +196,14 @@ func (r *Registry) DownloadBlob(auth *Auth, repository string, digest string, w 
 
 		httpClient := r.httpClient()
 
-		glog.V(4).Infof("HTTP %s %s", req.Method, req.URL)
+		glog.V(2).Infof("HTTP %s %s", req.Method, req.URL)
 		resp, err := httpClient.Do(req)
 		if err != nil {
 			return 0, err
 		}
 		// We can't defer resp.Body.Close, because we're in a loop
 
-		switch (resp.StatusCode) {
+		switch resp.StatusCode {
 		case 200:
 			n, err := io.Copy(w, resp.Body)
 
@@ -246,34 +245,6 @@ func randomId() string {
 	return uuid
 }
 
-func (r *Registry) monolithicUpload(token *Token, repository string, digest string, src io.Reader, length int64) error {
-	client := &http.Client{}
-
-	authHeader, err := token.GetAuthorizationHeader()
-	if err != nil {
-		return err
-	}
-
-	url := r.buildUrl("v2/" + repository + "/blobs/uploads/?digest=" + digest)
-	req, err := http.NewRequest("POST", url, src)
-
-	req.Header.Add("Authorization", authHeader)
-	req.Header.Add("Content-Length", strconv.FormatInt(length, 10))
-	req.Header.Add("Content-Type", "application/octet-stream")
-
-	glog.V(2).Infof("Blob upload of size %d: %s %s", length, req.Method, req.URL)
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("error uploading %q: %v", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 201 {
-		return fmt.Errorf("docker registry returned unexpected result uploading to %s: %s", repository, resp.Status)
-	}
-	return nil
-}
-
 func (r *Registry) httpClient() *http.Client {
 	if r.HttpClient == nil {
 		return http.DefaultClient
@@ -296,7 +267,7 @@ func (r *Registry) buildUrl(relativePath string) string {
 func (r *Registry) doSimpleRequest(req *http.Request) (*http.Response, []byte, error) {
 	httpClient := r.httpClient()
 
-	glog.V(4).Infof("HTTP %s %s", req.Method, req.URL)
+	glog.V(2).Infof("HTTP %s %s", req.Method, req.URL)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, nil, err
@@ -311,9 +282,8 @@ func (r *Registry) doSimpleRequest(req *http.Request) (*http.Response, []byte, e
 	return resp, body, err
 }
 
-
 func (r *Registry) beginUpload(auth *Auth, repository string) (string, string, error) {
-	authHeader := auth.FindHeader(r, repository, "push")
+	authHeader := auth.FindHeader(r, repository, "pull,push")
 
 	attempt := 0
 
@@ -334,26 +304,26 @@ func (r *Registry) beginUpload(auth *Auth, repository string) (string, string, e
 			return "", "", fmt.Errorf("error initiating upload to %s: %v", repository, err)
 		}
 
-		switch (resp.StatusCode) {
+		switch resp.StatusCode {
 		case 202:
 			location := resp.Header.Get("Location")
 			if location == "" {
-				return "","", fmt.Errorf("no location returned from upload begin")
+				return "", "", fmt.Errorf("no location returned from upload begin")
 			}
 			return authHeader, location, nil
 
 		case 401:
 			if attempt >= 2 {
-				return "","", fmt.Errorf("permission denied")
+				return "", "", fmt.Errorf("permission denied")
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
 			if err != nil {
-				return "","", err
+				return "", "", err
 			}
 
 		default:
-			return "","", fmt.Errorf("docker registry returned unexpected result initiating upload to %s: %s", repository, resp.Status)
+			return "", "", fmt.Errorf("docker registry returned unexpected result initiating upload to %s: %s", repository, resp.Status)
 		}
 	}
 }
@@ -394,10 +364,52 @@ func (r *Registry) completeUpload(authHeader string, location string, digest str
 	return nil
 }
 
+// monolithic upload is in the spec but not actually supported?  https://github.com/docker/distribution/issues/1170
+//func (r *Registry) monolithicUpload(auth *Auth, repository string, digest string, src io.Reader, length int64) error {
+//	authHeader := auth.FindHeader(r, repository, "pull,push")
+//
+//	attempt := 0
+//
+//	for {
+//		attempt++
+//
+//		url := r.buildUrl("v2/" + repository + "/blobs/uploads/?digest=" + url.QueryEscape(digest))
+//
+//		req, err := http.NewRequest("POST", url, src)
+//		if authHeader != "" {
+//			req.Header.Add("Authorization", authHeader)
+//		}
+//		req.Header.Add("Content-Length", strconv.FormatInt(length, 10))
+//		req.Header.Add("Content-Type", "application/octet-stream")
+//
+//		glog.V(2).Infof("Initiate blob upload: %s %s", req.Method, req.URL)
+//		resp, _, err := r.doSimpleRequest(req)
+//		if err != nil {
+//			return fmt.Errorf("error initiating upload to %s: %v", repository, err)
+//		}
+//
+//		switch (resp.StatusCode) {
+//		case 202:
+//			return nil
+//
+//		case 401:
+//			if attempt >= 2 {
+//				return fmt.Errorf("permission denied")
+//			}
+//
+//			authHeader, err = auth.GetHeader(r, resp)
+//			if err != nil {
+//				return err
+//			}
+//
+//		default:
+//			return fmt.Errorf("docker registry returned unexpected result initiating upload to %s: %s", repository, resp.Status)
+//		}
+//	}
+//}
+
 func (r *Registry) UploadBlob(auth *Auth, repository string, digest string, src io.Reader, length int64) error {
 	// TODO: Chunked / resumable uploading?
-	//return r.monolithicUpload(token, repository, digest, src, length)
-
 	authHeader, location, err := r.beginUpload(auth, repository)
 	if err != nil {
 		return err
@@ -432,7 +444,7 @@ func (r *Registry) HasBlob(auth *Auth, repository string, digest string) (bool, 
 			return false, fmt.Errorf("error checking for blob %s/%s: %v", repository, digest, err)
 		}
 
-		switch (resp.StatusCode) {
+		switch resp.StatusCode {
 		case 200:
 			return true, nil
 
@@ -446,7 +458,7 @@ func (r *Registry) HasBlob(auth *Auth, repository string, digest string) (bool, 
 
 			authHeader, err = auth.GetHeader(r, resp)
 			if err != nil {
-				return false,  err
+				return false, err
 			}
 
 		default:
