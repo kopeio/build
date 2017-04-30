@@ -1,3 +1,6 @@
+all:
+	bazel build //...
+
 demo:
 	bazel build //cmd/imagebuilder
 	bazel-bin/cmd/imagebuilder/imagebuilder fetch docker://busybox --v=4 --alsologtostderr

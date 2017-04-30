@@ -38,12 +38,20 @@ func BuildPushCommand(f Factory, out io.Writer) *cobra.Command {
 }
 
 type DockerImageSpec struct {
+	Host       string
 	Repository string
 	Tag        string
 }
 
 func (s *DockerImageSpec) String() string {
-	return "docker://" + s.Repository + ":" + s.Tag
+	v := "docker://"
+	if s.Host != "" {
+		host := strings.TrimPrefix(s.Host, "https://")
+		host = strings.TrimPrefix(host, "http://")
+		v += host + "/"
+	}
+	v += s.Repository + ":" + s.Tag
+	return v
 }
 
 func ParseDockerImageSpec(s string) (*DockerImageSpec, error) {
@@ -61,27 +69,32 @@ func ParseDockerImageSpec(s string) (*DockerImageSpec, error) {
 		v += u.Path
 	}
 
+	spec := &DockerImageSpec{}
+
 	tokens := strings.Split(v, ":")
-	repository := tokens[0]
-	var tag string
 	if len(tokens) == 1 {
-		tag = "latest"
+		spec.Tag = "latest"
 	} else if len(tokens) == 2 {
-		tag = tokens[1]
+		spec.Tag = tokens[1]
 	} else {
 		return nil, fmt.Errorf("unknown docker image format %q", s)
 	}
 
-	if !strings.Contains(repository, "/") {
-		repository = "library/" + repository
+	tokens = strings.Split(tokens[0], "/")
+	if len(tokens) == 1 {
+		spec.Repository = "library/" + tokens[0]
+	} else if len(tokens) == 2 {
+		spec.Repository = tokens[0] + "/" + tokens[1]
+	} else if len(tokens) == 3 {
+		spec.Host = "https://" + tokens[0]
+		spec.Repository = tokens[1] + "/" + tokens[2]
+	} else {
+		return nil, fmt.Errorf("unknown docker image format %q", s)
 	}
 
-	return &DockerImageSpec{
-		Repository: repository,
-		Tag:        tag,
-	}, nil
-
+	return spec, nil
 }
+
 func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	if flags.Source == "" {
 		return fmt.Errorf("source is required")
@@ -100,12 +113,15 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		return err
 	}
 
-	registry := &docker.Registry{}
-	auth := docker.Auth{}
-	token, err := auth.GetToken("repository:" + dest.Repository + ":pull,push")
-	if err != nil {
-		return fmt.Errorf("error getting registry token: %v", err)
+	targetRegistry := &docker.Registry{
+		URL: dest.Host,
 	}
+	auth := &docker.Auth{}
+	//auth := docker.Auth{Subject: dest.Host}
+	// token, err := auth.GetToken("repository:" + dest.Repository + ":pull,push")
+	//if err != nil {
+	//	return fmt.Errorf("error getting registry token: %v", err)
+	//}
 
 	layer, err := layerStore.FindLayer(flags.Source)
 	if err != nil {
@@ -215,14 +231,14 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	}
 
 	{
-		err = uploadBlob(registry, token, dest.Repository, configBlob)
+		err = uploadBlob(targetRegistry, auth, dest.Repository, configBlob)
 		if err != nil {
 			return err
 		}
 	}
 
 	for i, digest := range imageManifest.Layers {
-		if i == len(imageManifest.Layers)-1 {
+		if i == len(imageManifest.Layers) - 1 {
 			src, err := layerStore.FindBlob(dest.Repository, digest.Digest)
 			if err != nil {
 				return err
@@ -230,14 +246,14 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			if src == nil {
 				return fmt.Errorf("unable to find layer blob %s %s", dest.Repository, digest.Digest)
 			}
-			err = uploadBlob(registry, token, dest.Repository, src)
+			err = uploadBlob(targetRegistry, auth, dest.Repository, src)
 		} else {
 			// TODO: Cross-copy blobs ... we don't need to download them
 			src, err := layerStore.FindBlob(baseImageSpec.Repository, digest.Digest)
 			if err != nil {
 				return err
 			}
-			err = uploadBlob(registry, token, dest.Repository, src)
+			err = uploadBlob(targetRegistry, auth, dest.Repository, src)
 		}
 		if err != nil {
 			return err
@@ -263,7 +279,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 				Size:      layer.Size,
 			})
 		}
-		err := registry.PutManifest(token, dest.Repository, dest.Tag, dockerManifest)
+		err := targetRegistry.PutManifest(auth, dest.Repository, dest.Tag, dockerManifest)
 		if err != nil {
 			return fmt.Errorf("error writing manifest: %v", err)
 		}
@@ -273,10 +289,10 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	return nil
 }
 
-func uploadBlob(registry *docker.Registry, token *docker.Token, destRepository string, srcBlob layers.Blob) error {
+func uploadBlob(registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob) error {
 	digest := srcBlob.Digest()
 
-	hasBlob, err := registry.HasBlob(token, destRepository, digest)
+	hasBlob, err := registry.HasBlob(auth, destRepository, digest)
 	if err != nil {
 		return err
 	}
@@ -292,7 +308,7 @@ func uploadBlob(registry *docker.Registry, token *docker.Token, destRepository s
 	}
 	defer r.Close()
 
-	err = registry.UploadBlob(token, destRepository, digest, r, srcBlob.Length())
+	err = registry.UploadBlob(auth, destRepository, digest, r, srcBlob.Length())
 	if err != nil {
 		return err
 	}

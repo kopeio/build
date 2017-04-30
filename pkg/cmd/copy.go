@@ -62,7 +62,6 @@ func RunCopyCommand(factory Factory, options *CopyOptions, out io.Writer) error 
 	if err := putFile(options.Source, l, destTokens[1], 0); err != nil {
 		return err
 	}
-
 	fmt.Fprintf(out, "Copied %s -> %s\n", options.Source, options.Dest)
 	return nil
 }
@@ -81,7 +80,7 @@ func putFile(src string, l layers.Layer, dest string, depth int) error {
 
 		if depth == 0 {
 			// TODO: Mirror cp's magic (but tricky) syntax?
-			dest = filepath.Join(dest, stat.Name())
+			// dest = filepath.Join(dest, stat.Name())
 		}
 
 		for _, file := range files {

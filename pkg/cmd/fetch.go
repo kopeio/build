@@ -46,28 +46,20 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 
 	glog.Infof("Querying registry for image %s", spec)
 
-	registry := &docker.Registry{}
-	auth := docker.Auth{}
-	token, err := auth.GetToken("repository:" + spec.Repository + ":pull")
-	if err != nil {
-		return fmt.Errorf("error getting registry token: %v", err)
+	registry := &docker.Registry{
+		URL: spec.Host,
 	}
-	//{
-	//	response, err := registry.ListTags(token, image)
-	//	if err != nil {
-	//		return fmt.Errorf("error listing tags: %v", err)
-	//	}
-	//	glog.Infof("response: %s", response)
-	//}
+	auth := &docker.Auth{}
+
 
 	{
-		dockerManifest, err := registry.GetManifest(token, spec.Repository, spec.Tag)
+		dockerManifest, err := registry.GetManifest(auth, spec.Repository, spec.Tag)
 		if err != nil {
 			return fmt.Errorf("error getting manifest: %v", err)
 		}
 		glog.Infof("response: %s", dockerManifest)
 
-		blob, err := ensureBlob(registry, token, spec.Repository, dockerManifest.Config.Digest, layerStore)
+		blob, err := ensureBlob(out, registry, auth, spec.Repository, dockerManifest.Config.Digest, layerStore)
 		if err != nil {
 			return err
 		}
@@ -82,7 +74,7 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 		}
 
 		for _, layer := range dockerManifest.Layers {
-			blob, err := ensureBlob(registry, token, spec.Repository, layer.Digest, layerStore)
+			blob, err := ensureBlob(out, registry, auth, spec.Repository, layer.Digest, layerStore)
 			if err != nil {
 				return err
 			}
@@ -102,7 +94,7 @@ func RunFetchCommand(factory Factory, options *FetchOptions, out io.Writer) erro
 	return nil
 }
 
-func ensureBlob(registry *docker.Registry, token *docker.Token, repository string, digest string, layerStore layers.Store) (layers.Blob, error) {
+func ensureBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, repository string, digest string, layerStore layers.Store) (layers.Blob, error) {
 	blob, err := layerStore.FindBlob(repository, digest)
 	if err != nil {
 		return nil, fmt.Errorf("error checking for blob: %v", err)
@@ -111,7 +103,7 @@ func ensureBlob(registry *docker.Registry, token *docker.Token, repository strin
 		glog.Infof("already have blob %s", digest)
 		return blob, nil
 	}
-	glog.Infof("Downloading blob %s", digest)
+	fmt.Fprintf(out, "Downloading layer %s\n", digest)
 
 	tmpfile, err := ioutil.TempFile("", "blob")
 	if err != nil {
@@ -128,7 +120,7 @@ func ensureBlob(registry *docker.Registry, token *docker.Token, repository strin
 		}
 	}()
 
-	n, err := registry.DownloadBlob(token, repository, digest, tmpfile)
+	n, err := registry.DownloadBlob(auth, repository, digest, tmpfile)
 	if err != nil {
 		return nil, fmt.Errorf("error downloading blob %s: %v", digest, err)
 	}
