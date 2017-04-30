@@ -14,7 +14,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+var RemovedTimestamp = time.Time{}
 
 type FSLayerStore struct {
 	Path string
@@ -418,6 +421,11 @@ func copyDirToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string)
 		}
 		hdr.Name = tarPrefix
 
+		// TODO: Provide option to preserve timestamps?
+		hdr.ModTime = RemovedTimestamp
+		hdr.AccessTime = RemovedTimestamp
+		hdr.ChangeTime = RemovedTimestamp
+
 		err = w.WriteHeader(hdr)
 		if err != nil {
 			return fmt.Errorf("error creating tar entry for directory %s: %v", hdr.Name, err)
@@ -454,6 +462,11 @@ func copyFileToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string
 		return fmt.Errorf("error build tar entry: %v", err)
 	}
 	hdr.Name = path.Join(tarPrefix, f.Name())
+
+	// TODO: Provide option to preserve timestamps?
+	hdr.ModTime = RemovedTimestamp
+	hdr.AccessTime = RemovedTimestamp
+	hdr.ChangeTime = RemovedTimestamp
 
 	err = w.WriteHeader(hdr)
 	if err != nil {
