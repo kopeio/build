@@ -15,6 +15,7 @@ import (
 	"kope.io/imagebuilder/pkg/layers"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type PushOptions struct {
@@ -240,6 +241,8 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		Size:   configBlob.Length(),
 	}
 
+	var uploads []*uploadBlob
+
 	// Add and upload base layers
 	if base != nil {
 		for _, baseLayer := range baseImageManifest.Layers {
@@ -253,10 +256,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			if err != nil {
 				return err
 			}
-			err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
-			if err != nil {
-				return err
-			}
+			uploads = append(uploads, &uploadBlob{out, targetRegistry, auth, dest.Repository, src})
 		}
 	}
 
@@ -276,10 +276,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		if src == nil {
 			return fmt.Errorf("unable to find layer blob %s %s", dest.Repository, digest)
 		}
-		err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
-		if err != nil {
-			return err
-		}
+		uploads = append(uploads, &uploadBlob{out, targetRegistry, auth, dest.Repository, src})
 	}
 
 	// Build and upload the manifest
@@ -289,10 +286,11 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			return fmt.Errorf("error writing image manifest: %v", err)
 		}
 
-		err = uploadBlob(out, targetRegistry, auth, dest.Repository, configBlob)
-		if err != nil {
-			return err
-		}
+		uploads = append(uploads, &uploadBlob{out, targetRegistry, auth, dest.Repository, configBlob})
+	}
+
+	if err := uploadBlobs(uploads); err != nil {
+		return err
 	}
 
 	// Push the manifest
@@ -324,36 +322,6 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	return nil
 }
 
-func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob) error {
-	digest := srcBlob.Digest()
-
-	hasBlob, err := registry.HasBlob(auth, destRepository, digest)
-	if err != nil {
-		return err
-	}
-
-	if hasBlob {
-		glog.V(2).Infof("Already has blob %s %s", destRepository, digest)
-		return nil
-	}
-
-	r, err := srcBlob.Open()
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	length := srcBlob.Length()
-	mb := length / (1024 * 1024)
-	fmt.Fprintf(out, "Uploading blob %s (%d MB)\n", digest, mb)
-	err = registry.UploadBlob(auth, destRepository, digest, r, srcBlob.Length())
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func dockerDigest(r io.Reader) (string, error) {
 	hasher := sha256.New()
 	_, err := io.Copy(hasher, r)
@@ -371,4 +339,72 @@ func sha256Bytes(data []byte) string {
 		glog.Fatalf("error hashing bytes: %v", err)
 	}
 	return "sha256:" + hex.EncodeToString(hasher.Sum(nil))
+}
+
+type uploadBlob struct {
+	out            io.Writer
+	registry       *docker.Registry
+	auth           *docker.Auth
+	destRepository string
+	srcBlob        layers.Blob
+}
+
+func (u *uploadBlob) Upload() error {
+	digest := u.srcBlob.Digest()
+
+	hasBlob, err := u.registry.HasBlob(u.auth, u.destRepository, digest)
+	if err != nil {
+		return err
+	}
+
+	if hasBlob {
+		glog.V(2).Infof("Already has blob %s %s", u.destRepository, digest)
+		return nil
+	}
+
+	r, err := u.srcBlob.Open()
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	length := u.srcBlob.Length()
+	mb := length / (1024 * 1024)
+	fmt.Fprintf(u.out, "Uploading blob %s (%d MB)\n", digest, mb)
+	err = u.registry.UploadBlob(u.auth, u.destRepository, digest, r, u.srcBlob.Length())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func uploadBlobs(uploads []*uploadBlob) error {
+	var wg sync.WaitGroup
+	wg.Add(len(uploads))
+
+	var mutex sync.Mutex
+
+	var errors []error
+
+	for _, upload := range uploads {
+		go func(u *uploadBlob) {
+			err := u.Upload()
+			if err != nil {
+				mutex.Lock()
+				defer mutex.Unlock()
+
+				errors = append(errors, err)
+			}
+
+			wg.Done()
+		}(upload)
+	}
+
+	wg.Wait()
+
+	if len(errors) != 0 {
+		return errors[0]
+	}
+	return nil
 }
