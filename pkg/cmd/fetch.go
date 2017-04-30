@@ -20,9 +20,11 @@ func BuildFetchCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "fetch",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Source = cmd.Flags().Arg(0)
-			return RunFetchCommand(f, options, out)
+			if err := RunFetchCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 

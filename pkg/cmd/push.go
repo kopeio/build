@@ -27,10 +27,12 @@ func BuildPushCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "push",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Source = cmd.Flags().Arg(0)
 			options.Dest = cmd.Flags().Arg(1)
-			return RunPushCommand(f, options, out)
+			if err := RunPushCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 

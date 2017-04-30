@@ -22,10 +22,12 @@ func BuildCopyCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "cp",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Source = cmd.Flags().Arg(0)
 			options.Dest = cmd.Flags().Arg(1)
-			return RunCopyCommand(f, options, out)
+			if err := RunCopyCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 

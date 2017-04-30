@@ -15,9 +15,11 @@ func BuildDeleteLayerCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "layer",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Name = cmd.Flags().Arg(0)
-			return RunDeleteLayerCommand(f, options, out)
+			if err := RunDeleteLayerCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 

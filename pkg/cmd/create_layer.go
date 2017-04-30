@@ -17,9 +17,11 @@ func BuildCreateLayerCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "layer",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Name = cmd.Flags().Arg(0)
-			return RunCreateLayerCommand(f, options, out)
+			if err := RunCreateLayerCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 

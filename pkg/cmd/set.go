@@ -18,7 +18,7 @@ func BuildSetCommand(f Factory, out io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use: "set",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			options.Layer = cmd.Flags().Arg(0)
 			options.Key = cmd.Flags().Arg(1)
 			options.Value = cmd.Flags().Args()
@@ -27,7 +27,9 @@ func BuildSetCommand(f Factory, out io.Writer) *cobra.Command {
 			} else {
 				options.Value = nil
 			}
-			return RunSetCommand(f, options, out)
+			if err := RunSetCommand(f, options, out); err != nil {
+				ExitWithError(err)
+			}
 		},
 	}
 
