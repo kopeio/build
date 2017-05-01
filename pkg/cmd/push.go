@@ -242,7 +242,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 
 	// Add and upload base layers
 	if base != nil {
-		for _, baseLayer := range baseImageManifest.Layers {
+		for i, baseLayer := range baseImageManifest.Layers {
 			imageManifest.Layers = append(imageManifest.Layers, layers.LayerManifest{
 				Digest: baseLayer.Digest,
 				Size:   baseLayer.Size,
@@ -253,7 +253,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			if err != nil {
 				return err
 			}
-			err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
+			err = uploadBlob(out, targetRegistry, auth, dest.Repository, src, fmt.Sprintf("%s layer #%d)", baseImageSpec, i+1))
 			if err != nil {
 				return err
 			}
@@ -276,7 +276,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 		if src == nil {
 			return fmt.Errorf("unable to find layer blob %s %s", dest.Repository, digest)
 		}
-		err = uploadBlob(out, targetRegistry, auth, dest.Repository, src)
+		err = uploadBlob(out, targetRegistry, auth, dest.Repository, src, newLayer.Description)
 		if err != nil {
 			return err
 		}
@@ -289,7 +289,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 			return fmt.Errorf("error writing image manifest: %v", err)
 		}
 
-		err = uploadBlob(out, targetRegistry, auth, dest.Repository, configBlob)
+		err = uploadBlob(out, targetRegistry, auth, dest.Repository, configBlob, "image manifest")
 		if err != nil {
 			return err
 		}
@@ -324,7 +324,7 @@ func RunPushCommand(factory Factory, flags *PushOptions, out io.Writer) error {
 	return nil
 }
 
-func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob) error {
+func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, destRepository string, srcBlob layers.Blob, info string) error {
 	digest := srcBlob.Digest()
 
 	hasBlob, err := registry.HasBlob(auth, destRepository, digest)
@@ -333,7 +333,7 @@ func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, des
 	}
 
 	if hasBlob {
-		glog.V(2).Infof("Already has blob %s %s", destRepository, digest)
+		glog.V(2).Infof("Already has blob for %s (%s %s)", info, destRepository, digest)
 		return nil
 	}
 
@@ -344,8 +344,11 @@ func uploadBlob(out io.Writer, registry *docker.Registry, auth *docker.Auth, des
 	defer r.Close()
 
 	length := srcBlob.Length()
-	mb := length / (1024 * 1024)
-	fmt.Fprintf(out, "Uploading blob %s (%d MB)\n", digest, mb)
+	mb := fmt.Sprintf("%d MB", length/(1024*1024))
+	if mb == "0 MB" {
+		mb = "< 1MB"
+	}
+	fmt.Fprintf(out, "Uploading blob: %s (%s, %s)\n", info, mb, digest)
 	err = registry.UploadBlob(auth, destRepository, digest, r, srcBlob.Length())
 	if err != nil {
 		return err
