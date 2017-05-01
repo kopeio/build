@@ -1,0 +1,5 @@
+owner: kopeio
+repo: build
+assets:
+  - source: bazel-bin/cmd/kcb/kcb
+    githubName: kcb
