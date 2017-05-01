@@ -210,7 +210,7 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 	}
 
 	if len(errors) == 1 {
-		return errors[0]
+		return nil, errors[0]
 	} else if len(errors) > 1 {
 		b := &bytes.Buffer{}
 		for _, err := range errors {
