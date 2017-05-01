@@ -141,6 +141,11 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 			return "", err
 		}
 
+		if token == nil {
+			glog.Infof("No authentication information for %q", realm)
+			return "", nil
+		}
+
 		return token.GetAuthorizationHeader()
 
 	} else if strings.HasPrefix(wwwAuthenticate, "Basic ") {
@@ -150,6 +155,11 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 		authConfig, err := a.getAuthentication(site)
 		if err != nil {
 			return "", err
+		}
+
+		if authConfig == nil {
+			glog.Infof("No authentication information for %q", site)
+			return "", nil
 		}
 
 		token := &Token{
