@@ -1,6 +1,6 @@
 bazel-bin
+bazel-build
 bazel-genfiles
-bazel-imagebuilder
 bazel-out
 bazel-testlogs
 
