@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
@@ -176,20 +177,63 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 }
 
 func (a *Auth) getAuthentication(site string) (*authConfig, error) {
-	conf := make(map[string]*authConfig)
+	var errors []error
 
-	p := filepath.Join(os.Getenv("HOME"), ".dockercfg")
-	b, err := ioutil.ReadFile(p)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+	config := os.Getenv("REGISTRY_CONFIG")
+	if config != "" {
+		auth, err := getAuthentication([]byte(config), site)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("error parsing REGISTRY_CONFIG: %v", err))
+		} else if auth != nil {
+			glog.Infof("Found credentials for %s in REGISTRY_CONFIG", site)
+			return auth, nil
 		}
-		return nil, fmt.Errorf("error reading %q: %v", p, err)
 	}
 
-	err = json.Unmarshal(b, &conf)
+	{
+		p := filepath.Join(os.Getenv("HOME"), ".dockercfg")
+		b, err := ioutil.ReadFile(p)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("error reading %q: %v", p, err)
+			} else {
+				b = nil
+			}
+		}
+		auth, err := getAuthentication(b, site)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("error parsing %q: %v", p, err))
+		} else if auth != nil {
+			glog.Infof("Found credentials for %s in %q", site, p)
+			return auth, nil
+		}
+	}
+
+	if len(errors) == 1 {
+		return errors[0]
+	} else if len(errors) > 1 {
+		b := &bytes.Buffer{}
+		for _, err := range errors {
+			b.WriteString(fmt.Sprintf("  %v\n", err))
+		}
+
+		return nil, fmt.Errorf("Multiple errors getting authentication:\n%s", b.String())
+	}
+
+	glog.Infof("Did not find credentials for %s", site)
+	return nil, nil
+}
+
+func getAuthentication(config []byte, site string) (*authConfig, error) {
+	if len(config) == 0 {
+		return nil, nil
+	}
+
+	conf := make(map[string]*authConfig)
+
+	err := json.Unmarshal(config, &conf)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing %q: %v", p, err)
+		return nil, fmt.Errorf("error parsing: %v", err)
 	}
 
 	var keys []string
@@ -204,7 +248,6 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 	for _, k := range keys {
 		auth := conf[k]
 		if auth != nil {
-			glog.Infof("Found credentials for %s", k)
 			return auth, nil
 		}
 	}
@@ -214,12 +257,10 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 		k = strings.TrimPrefix(k, "http://")
 		auth := conf[k]
 		if auth != nil {
-			glog.V(2).Infof("Found credentials for %s", k)
 			return auth, nil
 		}
 	}
 
-	glog.Infof("Did not find credentials for %s", site)
 	return nil, nil
 }
 
