@@ -8,6 +8,7 @@ go_library(
         "create_layer.go",
         "delete.go",
         "delete_layer.go",
+        "env.go",
         "factory.go",
         "fetch.go",
         "push.go",

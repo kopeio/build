@@ -38,6 +38,7 @@ func buildRootCommand(f Factory, out io.Writer) *cobra.Command {
 	cmd.AddCommand(BuildFetchCommand(f, out))
 	cmd.AddCommand(BuildPushCommand(f, out))
 	cmd.AddCommand(BuildSetCommand(f, out))
+	cmd.AddCommand(BuildEnvCommand(f, out))
 
 	cmd.PersistentFlags().AddGoFlagSet(goflag.CommandLine)
 

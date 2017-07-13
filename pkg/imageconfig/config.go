@@ -79,6 +79,11 @@ func JoinLayer(base *ImageConfig, addLayers []*AddLayer) (*ImageConfig, error) {
 		if addLayer.Options.Cmd != nil {
 			c.Config.Cmd = addLayer.Options.Cmd
 		}
+		if addLayer.Options.Env != nil {
+			for k, v := range addLayer.Options.Env {
+				c.Config.Env = append(c.Config.Env, k+"="+v)
+			}
+		}
 	}
 
 	// TODO: Is this right?
