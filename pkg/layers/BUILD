@@ -7,6 +7,7 @@ go_library(
         "options.go",
         "store.go",
     ],
+    importpath = "kope.io/imagebuilder/pkg/layers",
     visibility = ["//visibility:public"],
     deps = ["@com_github_golang_glog//:go_default_library"],
 )
