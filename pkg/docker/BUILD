@@ -6,6 +6,7 @@ go_library(
         "auth.go",
         "registry.go",
     ],
+    importpath = "kope.io/imagebuilder/pkg/docker",
     visibility = ["//visibility:public"],
     deps = ["@com_github_golang_glog//:go_default_library"],
 )

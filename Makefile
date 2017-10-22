@@ -13,3 +13,6 @@ demo:
 gofmt:
 	gofmt -w -s pkg/ cmd/
 
+gazelle:
+	bazel run //:gazelle
+
