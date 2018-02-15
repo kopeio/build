@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 type SetOptions struct {

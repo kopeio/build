@@ -6,15 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
-	"kope.io/imagebuilder/pkg/docker"
-	"kope.io/imagebuilder/pkg/imageconfig"
-	"kope.io/imagebuilder/pkg/layers"
 	"net/url"
 	"strings"
+
+	"github.com/golang/glog"
+	"github.com/spf13/cobra"
+	"kope.io/build/pkg/docker"
+	"kope.io/build/pkg/imageconfig"
+	"kope.io/build/pkg/layers"
 )
 
 type PushOptions struct {

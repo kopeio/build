@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"kope.io/imagebuilder/pkg/layers"
 	"path/filepath"
+
+	"kope.io/build/pkg/layers"
 )
 
 type Factory interface {

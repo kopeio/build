@@ -2,10 +2,10 @@ package(default_visibility = ["//visibility:public"])
 
 load("@io_bazel_rules_go//go:def.bzl", "gazelle", "go_prefix")
 
-go_prefix("kope.io/imagebuilder")
+go_prefix("kope.io/build")
 
 gazelle(
     name = "gazelle",
     #external = "vendored",
-    prefix = "kope.io/imagebuilder",
+    prefix = "kope.io/build",
 )

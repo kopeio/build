@@ -1,8 +1,9 @@
 package main
 
 import (
-	"kope.io/imagebuilder/pkg/cmd"
 	"os"
+
+	"kope.io/build/pkg/cmd"
 )
 
 func main() {

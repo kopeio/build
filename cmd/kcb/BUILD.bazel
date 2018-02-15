@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "go_default_library",
     srcs = ["main.go"],
-    importpath = "kope.io/imagebuilder/cmd/kcb",
+    importpath = "kope.io/build/cmd/kcb",
     visibility = ["//visibility:private"],
     deps = ["//pkg/cmd:go_default_library"],
 )
@@ -11,6 +11,6 @@ go_library(
 go_binary(
     name = "kcb",
     embed = [":go_default_library"],
-    importpath = "kope.io/imagebuilder/cmd/kcb",
+    importpath = "kope.io/build/cmd/kcb",
     visibility = ["//visibility:public"],
 )

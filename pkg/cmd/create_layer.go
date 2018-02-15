@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
-	"kope.io/imagebuilder/pkg/layers"
+
+	"github.com/spf13/cobra"
+	"kope.io/build/pkg/layers"
 )
 
 type CreateLayerOptions struct {

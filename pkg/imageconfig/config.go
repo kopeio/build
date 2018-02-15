@@ -1,9 +1,10 @@
 package imageconfig
 
 import (
-	"kope.io/imagebuilder/pkg/layers"
 	"runtime"
 	"time"
+
+	"kope.io/build/pkg/layers"
 )
 
 type ImageConfig struct {
