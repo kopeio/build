@@ -69,7 +69,7 @@ func RunCopyCommand(factory Factory, options *CopyOptions, out io.Writer) error 
 }
 
 func putFile(src string, l layers.Layer, dest string, depth int) error {
-	stat, err := os.Stat(src)
+	stat, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("error reading %q: %v", src, err)
 	}
@@ -103,11 +103,26 @@ func putFile(src string, l layers.Layer, dest string, depth int) error {
 		return nil
 	}
 
+	if stat.Mode()&os.ModeSymlink == os.ModeSymlink {
+		glog.V(2).Infof("copying symlink %q to %s %q", src, l.Name(), dest)
+
+		link, err := os.Readlink(src)
+		if err != nil {
+			return fmt.Errorf("error reading symlink %q: %v", src, err)
+		}
+
+		if err := l.PutSymlink(dest, stat, link); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	glog.V(2).Infof("copying file %q to %s %q", src, l.Name(), dest)
 
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("error reading %q: %v", src, err)
+		return fmt.Errorf("error reading file %q: %v", src, err)
 	}
 	defer f.Close()
 

@@ -232,6 +232,31 @@ func (l *fsLayer) PutFile(dest string, stat os.FileInfo, in io.Reader) (int64, e
 	return n, err
 }
 
+func (l *fsLayer) PutSymlink(dest string, stat os.FileInfo, target string) error {
+	dest = strings.TrimPrefix(dest, "/")
+	// TODO: Sanitize to remove .. etc
+	dest = filepath.Join(l.path, "rootfs", dest)
+
+	err := os.MkdirAll(filepath.Dir(dest), 0755)
+	if err != nil {
+		return fmt.Errorf("failed to mkdirs for %q: %v", dest, err)
+	}
+
+	if err := os.Remove(dest); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("unable to remove symlink file %q: %v", dest, err)
+		}
+	}
+
+	if err := os.Symlink(target, dest); err != nil {
+		return fmt.Errorf("failed to symlink %q -> %q: %v", dest, target, err)
+	}
+
+	// TODO: Set creation times?  Though they don't seem to go into the tar file
+
+	return err
+}
+
 func putFile(dest string, mode os.FileMode, in io.Reader) (n int64, err error) {
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
@@ -447,6 +472,15 @@ func copyDirToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string)
 			continue
 		}
 
+		if f.Mode()&os.ModeSymlink == os.ModeSymlink {
+			err = copySymlinkToTar(w, tarPrefix, f, srcDir)
+			if err != nil {
+				return err
+			}
+
+			continue
+		}
+
 		err = copyFileToTar(w, tarPrefix, f, srcDir)
 		if err != nil {
 			return err
@@ -483,6 +517,33 @@ func copyFileToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string
 	_, err = io.Copy(w, in)
 	if err != nil {
 		return fmt.Errorf("error copying file %q to tarfile: %v", p, err)
+	}
+
+	return nil
+}
+
+func copySymlinkToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string) error {
+	hdr, err := tar.FileInfoHeader(f, "")
+	if err != nil {
+		return fmt.Errorf("error build tar entry: %v", err)
+	}
+	hdr.Name = path.Join(tarPrefix, f.Name())
+
+	// TODO: Provide option to preserve timestamps?
+	hdr.ModTime = RemovedTimestamp
+	hdr.AccessTime = RemovedTimestamp
+	hdr.ChangeTime = RemovedTimestamp
+
+	p := filepath.Join(srcDir, f.Name())
+	link, err := os.Readlink(p)
+	if err != nil {
+		return fmt.Errorf("error reading symlink %q: %v", p, err)
+	}
+
+	hdr.Linkname = link
+
+	if err := w.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("error creating tar symlink entry: %v", err)
 	}
 
 	return nil

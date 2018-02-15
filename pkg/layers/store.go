@@ -21,6 +21,7 @@ type Layer interface {
 	Name() string
 
 	PutFile(dest string, stat os.FileInfo, r io.Reader) (int64, error)
+	PutSymlink(dest string, stat os.FileInfo, target string) error
 
 	GetOptions() (Options, error)
 	SetOptions(options Options) error
