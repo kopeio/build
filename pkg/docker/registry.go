@@ -115,7 +115,7 @@ func (r *Registry) GetManifest(auth *Auth, repository string, tag string) (*Mani
 
 		case 401:
 			if attempt >= 2 {
-				return nil, fmt.Errorf("permission denied")
+				return nil, fmt.Errorf("permission denied reading %s", r.buildHumanName(repository, tag))
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
@@ -162,7 +162,7 @@ func (r *Registry) PutManifest(auth *Auth, repository string, tag string, manife
 
 		case 401:
 			if attempt >= 2 {
-				return fmt.Errorf("permission denied")
+				return fmt.Errorf("permission denied uploading to %s", r.buildHumanName(repository, tag))
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
@@ -215,7 +215,7 @@ func (r *Registry) DownloadBlob(auth *Auth, repository string, digest string, w 
 			resp.Body.Close()
 
 			if attempt >= 2 {
-				return 0, fmt.Errorf("permission denied")
+				return 0, fmt.Errorf("permission denied reading from %s", r.buildHumanName(repository, ""))
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
@@ -262,6 +262,21 @@ func (r *Registry) buildUrl(relativePath string) string {
 	}
 	url += relativePath
 	return url
+}
+
+func (r *Registry) buildHumanName(repository, tag string) string {
+	s := r.URL
+	if repository != "" {
+		if s != "" && !strings.HasSuffix(s, "/") {
+			s += "/"
+		}
+		s += repository
+
+		if tag != "" {
+			s += ":" + tag
+		}
+	}
+	return s
 }
 
 func (r *Registry) doSimpleRequest(req *http.Request) (*http.Response, []byte, error) {
@@ -314,7 +329,7 @@ func (r *Registry) beginUpload(auth *Auth, repository string) (string, string, e
 
 		case 401:
 			if attempt >= 2 {
-				return "", "", fmt.Errorf("permission denied")
+				return "", "", fmt.Errorf("permission denied uploading to %s", r.buildHumanName(repository, ""))
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
@@ -453,7 +468,7 @@ func (r *Registry) HasBlob(auth *Auth, repository string, digest string) (bool, 
 
 		case 401:
 			if attempt >= 2 {
-				return false, fmt.Errorf("permission denied")
+				return false, fmt.Errorf("permission denied reading blob from %s", r.buildHumanName(repository, ""))
 			}
 
 			authHeader, err = auth.GetHeader(r, resp)
