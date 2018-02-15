@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 type Auth struct {
@@ -37,7 +38,11 @@ type tokenResponse struct {
 	IssuedAt    string `json:"issued_at"`
 }
 
-type authConfig struct {
+type dockerConfig struct {
+	Auths map[string]*dockerConfigAuth `json:"auths"`
+}
+
+type dockerConfigAuth struct {
 	Email string `json:"email"`
 	Auth  string `json:"auth"`
 }
@@ -176,7 +181,7 @@ func (a *Auth) GetHeader(registry *Registry, resp *http.Response) (string, error
 	}
 }
 
-func (a *Auth) getAuthentication(site string) (*authConfig, error) {
+func (a *Auth) getAuthentication(site string) (*dockerConfigAuth, error) {
 	var errors []error
 
 	config := os.Getenv("REGISTRY_CONFIG")
@@ -191,7 +196,7 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 	}
 
 	{
-		p := filepath.Join(os.Getenv("HOME"), ".dockercfg")
+		p := filepath.Join(os.Getenv("HOME"), ".docker/config.json")
 		b, err := ioutil.ReadFile(p)
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -201,6 +206,25 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 			}
 		}
 		auth, err := getAuthentication(b, site)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("error parsing %q: %v", p, err))
+		} else if auth != nil {
+			glog.Infof("Found credentials for %s in %q", site, p)
+			return auth, nil
+		}
+	}
+
+	{
+		p := filepath.Join(os.Getenv("HOME"), ".dockercfg")
+		b, err := ioutil.ReadFile(p)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("error reading %q: %v", p, err)
+			} else {
+				b = nil
+			}
+		}
+		auth, err := getLegacyAuthentication(b, site)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("error parsing %q: %v", p, err))
 		} else if auth != nil {
@@ -224,18 +248,36 @@ func (a *Auth) getAuthentication(site string) (*authConfig, error) {
 	return nil, nil
 }
 
-func getAuthentication(config []byte, site string) (*authConfig, error) {
+func getAuthentication(config []byte, site string) (*dockerConfigAuth, error) {
 	if len(config) == 0 {
 		return nil, nil
 	}
 
-	conf := make(map[string]*authConfig)
+	conf := &dockerConfig{}
+	err := json.Unmarshal(config, &conf)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing: %v", err)
+	}
+
+	return getAuthenticationFromAuths(conf.Auths, site)
+}
+
+func getLegacyAuthentication(config []byte, site string) (*dockerConfigAuth, error) {
+	if len(config) == 0 {
+		return nil, nil
+	}
+
+	conf := make(map[string]*dockerConfigAuth)
 
 	err := json.Unmarshal(config, &conf)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing: %v", err)
 	}
 
+	return getAuthenticationFromAuths(conf, site)
+}
+
+func getAuthenticationFromAuths(conf map[string]*dockerConfigAuth, site string) (*dockerConfigAuth, error) {
 	var keys []string
 	if site == "" || site == "https://registry-1.docker.io/" {
 		keys = append(keys, "https://registry-1.docker.io/")
