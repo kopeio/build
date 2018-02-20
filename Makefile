@@ -18,7 +18,7 @@ gofmt:
 
 .PHONY: goimports
 goimports:
-	goimports -w cmd/ pkg/ test/
+	goimports -w cmd/ pkg/
 
 .PHONY: test
 test:
