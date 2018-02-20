@@ -459,7 +459,12 @@ func copyDirToTar(w *tar.Writer, tarPrefix string, f os.FileInfo, srcDir string)
 
 	files, err := ioutil.ReadDir(srcDir)
 	if err != nil {
-		return fmt.Errorf("error reading directory %q: %v", srcDir, err)
+		if os.IsNotExist(err) {
+			glog.Infof("skipping non-existent directory %q: %v", srcDir, err)
+			files = nil
+		} else {
+			return fmt.Errorf("error reading directory %q: %v", srcDir, err)
+		}
 	}
 
 	for _, f := range files {
