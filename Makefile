@@ -22,7 +22,7 @@ goimports:
 
 .PHONY: test
 test:
-	bazel test //pkg/... --test_output=streamed
+	bazel test //... --test_output=streamed
 
 .PHONY: gazelle
 gazelle:
