@@ -15,6 +15,7 @@ go_library(
         "root.go",
         "set.go",
     ],
+    importpath = "kope.io/imagebuilder/pkg/cmd",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/docker:go_default_library",
