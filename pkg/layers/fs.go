@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 var RemovedTimestamp = time.Time{}

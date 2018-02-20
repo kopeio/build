@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"io"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
 
 func Execute(out io.Writer) {

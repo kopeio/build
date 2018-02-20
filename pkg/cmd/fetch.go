@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
-	"kope.io/imagebuilder/pkg/docker"
-	"kope.io/imagebuilder/pkg/layers"
 	"os"
+
+	"github.com/golang/glog"
+	"github.com/spf13/cobra"
+	"kope.io/build/pkg/docker"
+	"kope.io/build/pkg/layers"
 )
 
 type FetchOptions struct {

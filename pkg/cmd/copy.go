@@ -2,14 +2,15 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
-	"kope.io/imagebuilder/pkg/layers"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/golang/glog"
+	"github.com/spf13/cobra"
+	"kope.io/build/pkg/layers"
 )
 
 type CopyOptions struct {

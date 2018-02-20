@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"io"
+
+	"github.com/spf13/cobra"
 )
 
 func BuildDeleteCommand(f Factory, out io.Writer) *cobra.Command {

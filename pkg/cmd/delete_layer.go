@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
+
+	"github.com/spf13/cobra"
 )
 
 type DeleteLayerOptions struct {

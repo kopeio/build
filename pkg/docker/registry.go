@@ -5,13 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 type Registry struct {
