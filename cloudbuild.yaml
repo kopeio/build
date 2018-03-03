@@ -1,0 +1,6 @@
+steps:
+- name: gcr.io/cloud-builders/bazel
+  args: ['build', '//cmd/...']
+# - name: gcr.io/cloud-builders/docker
+#   args: ['tag', 'bazel/path/to/some:docker_target', 'gcr.io/$PROJECT_ID/server']
+# images: ['gcr.io/$PROJECT_ID/server']
