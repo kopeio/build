@@ -1,5 +1,11 @@
 owner: kopeio
 repo: build
 assets:
-  - source: bazel-bin/cmd/kcb/kcb
-    githubName: kcb
+  - source: bazel-bin/cmd/kcb/darwin_amd64_pure_stripped/kcb
+    githubName: kops-darwin-amd64
+  - source: bazel-bin/cmd/kcb/darwin_amd64_pure_stripped/kcb.sha1
+    githubName: kops-darwin-amd64-sha1
+  - source: bazel-bin/cmd/kcb/linux_amd64_stripped/kcb
+    githubName: kops-linux-amd64
+  - source: bazel-bin/cmd/kcb/linux_amd64_stripped/kcb.sha1
+    githubName: kops-linux-amd64-sha1

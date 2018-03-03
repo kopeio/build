@@ -27,3 +27,9 @@ test:
 .PHONY: gazelle
 gazelle:
 	bazel run //:gazelle
+
+.PHONY: push-to-github
+push-to-github:
+	bazel build --experimental_platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/...
+	bazel build --experimental_platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //cmd/...
+	shipbot -tag "${SHIPBOT_VERSION}" -config .shipbot.yaml
