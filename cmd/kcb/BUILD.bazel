@@ -14,3 +14,10 @@ go_binary(
     importpath = "kope.io/build/cmd/kcb",
     visibility = ["//visibility:public"],
 )
+
+genrule(
+    name = "kcb-sha1",
+    srcs = [":kcb"],
+    outs = ["kcb.sha1"],
+    cmd = "sha1sum $(SRCS) | cut -d' ' -f1 > $@",
+)
