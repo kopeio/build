@@ -1,0 +1,5 @@
+steps:
+- name: gcr.io/cloud-builders/bazel
+  args: ['build', '-experimental_platforms=@io_bazel_rules_go//go/toolchain:linux_amd64', '//cmd/...']
+- name: gcr.io/cloud-builders/bazel
+  args: ['build', '-experimental_platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64', '//cmd/...']
